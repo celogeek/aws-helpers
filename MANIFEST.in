@@ -1,0 +1,2 @@
+include versioneer.py
+include aws_helpers/_version.py
