@@ -12,5 +12,8 @@ setup(
     author_email='me@celogeek.com',
     url='https://github.com/celogeek/aws-helpers',
     packages=["aws_helpers"],
-    test_suite='nose.collector'
+    test_suite='nose.collector',
+    install_requires=[
+        'boto3'
+    ]
 )
