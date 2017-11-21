@@ -11,7 +11,7 @@ S3_SPLIT = re.compile("^s3://([^/]+)/(.*)$")
 
 
 class S3:
-    def __init__(self, config):
+    def __init__(self, config=None):
         if not config:
             config = {}
         self.config = S3Config(**config)
