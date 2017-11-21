@@ -11,13 +11,9 @@ S3_SPLIT = re.compile("^s3://([^/]+)/(.*)$")
 
 
 class S3:
-    def __init__(self):
-        self.proxy = os.environ.get("BOTO3_PROXY")
-
-        config = {}
-        if self.proxy:
-            config = {"proxies": {"http": self.proxy, "https": self.proxy}}
-
+    def __init__(self, config):
+        if not config:
+            config = {}
         self.config = S3Config(**config)
         self.s3c = boto3.session.Session().resource("s3", config=self.config)
 
