@@ -1,3 +1,4 @@
+import io
 import gzip
 import os
 import re
@@ -64,7 +65,7 @@ class S3:
         if compressed:
             stream = gzip.open(body)
         else:
-            stream = body
+            stream = io.BytesIO(body.read())
 
         if decoder:
             yield map(decoder, stream)
