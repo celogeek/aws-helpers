@@ -14,7 +14,8 @@ class S3:
         if not config:
             config = {}
         self.config = S3Config(**config)
-        self.s3c = boto3.session.Session().resource("s3", config=self.config)
+        self.boto3_session = boto3.session.Session()
+        self.s3c = self.boto3_session.resource("s3", config=self.config)
 
     def split(self, path):
         """Split path to bucket, key
