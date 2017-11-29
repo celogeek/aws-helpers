@@ -1,8 +1,6 @@
-import io
 import gzip
-import os
+import io
 import re
-import tempfile
 from contextlib import contextmanager
 
 import boto3
@@ -108,7 +106,7 @@ class S3:
                 fh.write = lambda data: _write(encoder(data).encode() + b"\n")
             return fh
 
-        with tempfile.TemporaryFile() as f:
+        with io.BytesIO() as f:
             if compressed:
                 with gzip.open(f, "wb") as fz:
                     yield patchWriterIfNeed(fz)
