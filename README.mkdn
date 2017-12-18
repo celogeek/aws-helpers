@@ -1,18 +1,18 @@
-# aws_helper
+# aws_helpers
 
-Helper for AWS services using boto3. For now it contain a little helper for s3.
+Helpers for AWS services using boto3. For now it contain a little helper for s3.
 
 ## S3
 
 ```python
-from aws_helper import S3
+from aws_helpers import S3
 
-s3 = s3()
+s3 = S3()
 s3 = s3({"region_name":"us-east-1"})
 s3 = S3({"proxies":{"http":"proxy:8888"}})
 
 for s3file in s3.list("my-bucket", "my-prefix"):
-  with s3.get(s3file.bucket, s3file.key, decoder=simplejson.loads) as f:
+  with s3.get(s3file.bucket_name, s3file.key, decoder=simplejson.loads) as f:
     for js in f:
       # ... do something with js
 

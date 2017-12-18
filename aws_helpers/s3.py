@@ -10,7 +10,7 @@ S3_SPLIT = re.compile("^s3://([^/]+)/(.*)$")
 
 
 class S3:
-    """Helper for aws s3 using boto3
+    """Helpers for aws s3 using boto3
 
     This module is design to work nice with python3
 
