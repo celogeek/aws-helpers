@@ -1,0 +1,22 @@
+# aws_helper
+
+Helper for AWS services using boto3. For now it contain a little helper for s3.
+
+## S3
+
+```python
+from awl_helper import S3
+
+s3 = s3()
+s3 = s3({"region_name":"us-east-1"})
+s3 = S3({"proxies":{"http":"proxy:8888"}})
+
+for s3file in s3.list("my-bucket", "my-prefix"):
+  with s3.get(s3file.bucket, s3file.key, decoder=simplejson.loads) as f:
+    for js in f:
+      # ... do something with js
+
+with s3.put("my-bucket", "my-key", encoder=simplejson.dumps) as f:
+  f.write({"my":"doc"})
+  f.write({"my":"other doc"})
+```
