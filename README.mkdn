@@ -5,7 +5,7 @@ Helper for AWS services using boto3. For now it contain a little helper for s3.
 ## S3
 
 ```python
-from awl_helper import S3
+from aws_helper import S3
 
 s3 = s3()
 s3 = s3({"region_name":"us-east-1"})
@@ -19,4 +19,19 @@ for s3file in s3.list("my-bucket", "my-prefix"):
 with s3.put("my-bucket", "my-key", encoder=simplejson.dumps) as f:
   f.write({"my":"doc"})
   f.write({"my":"other doc"})
+```
+
+# Install
+
+In your requirements.txt, you can add :
+
+```bash
+# pickup your tag
+git+https://github.com/celogeek/aws-helpers.git@TAG
+
+# exemple for a specific version
+git+https://github.com/celogeek/aws-helpers.git@v0.0.8
+
+# pickup the master branch
+git+https://github.com/celogeek/aws-helpers.git
 ```
