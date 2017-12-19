@@ -21,6 +21,20 @@ with s3.put("my-bucket", "my-key", encoder=simplejson.dumps) as f:
   f.write({"my":"other doc"})
 ```
 
+## S3Streamer
+
+```python
+from aws_helpers import S3, S3Streamer
+
+def decode(s3file, s3):
+    with s3.get(path=s3file, decoder=simplejson.loads) as f:
+        for js in f:
+            yield js["..."]
+
+for msg in S3Stream(path="s3://...", func=decode, func_init = lambda x: S3(), ):
+    # do something with msg
+```
+
 # Install
 
 In your requirements.txt, you can add :
@@ -34,4 +48,9 @@ git+https://github.com/celogeek/aws-helpers.git@v0.0.8
 
 # pickup the master branch
 git+https://github.com/celogeek/aws-helpers.git
+```
+
+You can also install directly with pip:
+```bash
+pip install git+https://github.com/celogeek/aws-helpers.git
 ```

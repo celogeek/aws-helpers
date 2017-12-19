@@ -2,6 +2,7 @@ import gzip
 import io
 import re
 from contextlib import contextmanager
+from multiprocessing import Process, cpu_count, SimpleQueue
 
 import boto3
 from botocore.config import Config as S3Config
@@ -204,3 +205,90 @@ class S3:
             f.seek(0)
 
             self.s3c.Bucket(bucket).upload_fileobj(f, Key=key)
+
+
+class S3StreamWorker(Process):
+    """Worker for S3Streamer"""
+
+    def __init__(self, q_in, q_out, func, func_init):
+        Process.__init__(self)
+        self.daemon = True
+        self.q_in = q_in
+        self.q_out = q_out
+        self.func = func
+        self.func_args = func_init() if callable(func_init) else []
+        self.start()
+
+    def run(self):
+        while True:
+            job = self.q_in.get()
+            if not job:
+                self.q_out.put(None)
+                break
+            for result in self.func(job, *self.func_args):
+                self.q_out.put(result)
+
+
+class S3Stream:
+    """S3 Streamer
+
+    This will manager boto3 connexion in different sub process.
+
+    It is like Pool.imap_unordered, with inializer for boto3.
+
+    """
+
+    def __init__(self, config=None, bucket=None, prefix=None, path=None, nb_workers=None, func=None, func_init=None):
+        """Initialize the streamer
+
+        Args:
+            config (dict, optional): config for S3
+            bucket (str, optional): bucket to read from
+            prefix (str, optional): prefix to read from
+            path (str, optional): full path with bucket and prefix
+            nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
+            func (lambda): function that will receive the s3 path to process
+            func_init (lambda): args to pass to func with the s3 file. good place to init S3 connection
+
+        Require:
+            You need to pass either (bucket, prefix) or (path)
+
+        Example:
+
+            def decode(s3file, args):
+              s3 = args
+              with s3.get(path=s3file, decoder=simplejson.loads) as f:
+                for js in f:
+                  yield js["..."]
+
+            for msg in S3Stream(path="s3://...", func=decode, func_init = lambda x: [S3()]):
+                # do something with msg
+
+        """
+        self.s3 = S3(config)
+        self.bucket = bucket
+        self.prefix = prefix
+        if path:
+            self.bucket, self.prefix = self.s3.split(path)
+
+        self.q_in = SimpleQueue()
+        self.q_out = SimpleQueue()
+
+        self.nb_workers = nb_workers if nb_workers else cpu_count() * 4
+        self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, func_init) for _ in range(self.nb_workers))
+
+    def __iter__(self):
+        for s3file in self.s3.list(self.bucket, self.prefix):
+            self.q_in.put("s3://{}/{}".format(s3file.bucket_name, s3file.key))
+        for _ in range(self.nb_workers):
+            self.q_in.put(None)
+        return self
+
+    def __next__(self):
+        result = self.q_out.get()
+        if not result:
+            self.nb_workers -= 1
+            if not self.nb_workers:
+                raise StopIteration
+            return self.__next__()
+        return result
