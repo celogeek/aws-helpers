@@ -255,13 +255,15 @@ class S3Stream:
 
         Example:
 
-            def decode(s3file, args):
-              s3 = args
+            def init_worker():
+                return S3(),
+
+            def decode(s3file, s3):
               with s3.get(path=s3file, decoder=simplejson.loads) as f:
                 for js in f:
                   yield js["..."]
 
-            for msg in S3Stream(path="s3://...", func=decode, func_init = lambda x: [S3()]):
+            for msg in S3Stream(path="s3://...", func=decode, func_init=init_worker):
                 # do something with msg
 
         """
