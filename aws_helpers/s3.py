@@ -208,6 +208,10 @@ class S3:
             self.s3c.Bucket(bucket).upload_fileobj(f, Key=key)
 
 
+class S3EndOfIteration:
+    pass
+
+
 class S3StreamWorker(Process):
     """Worker for S3Streamer"""
 
@@ -224,8 +228,8 @@ class S3StreamWorker(Process):
         s3 = S3(self.s3config)
         while True:
             s3file = self.q_in.get()
-            if not s3file:
-                self.q_out.put(None)
+            if isinstance(s3file, S3EndOfIteration):
+                self.q_out.put(S3EndOfIteration())
                 break
             for result in self.func(s3, s3file):
                 self.q_out.put(result)
@@ -291,7 +295,7 @@ class S3Stream:
             for v in self.func_iter:
                 self.q_in.put(v)
             for _ in range(self.nb_workers):
-                self.q_in.put(None)
+                self.q_in.put(S3EndOfIteration())
 
         self.feeder = Thread(target=fill_q_in, daemon=True)
         self.feeder.start()
@@ -301,7 +305,7 @@ class S3Stream:
 
     def __next__(self):
         result = self.q_out.get()
-        if not result:
+        if isinstance(result, S3EndOfIteration):
             self.nb_workers -= 1
             if not self.nb_workers:
                 # ending subprocess
