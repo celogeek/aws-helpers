@@ -3,6 +3,7 @@ import io
 import re
 from contextlib import contextmanager
 from multiprocessing import Process, cpu_count, SimpleQueue
+from threading import Thread
 
 import boto3
 from botocore.config import Config as S3Config
@@ -210,22 +211,23 @@ class S3:
 class S3StreamWorker(Process):
     """Worker for S3Streamer"""
 
-    def __init__(self, q_in, q_out, func, func_init):
+    def __init__(self, q_in, q_out, func, s3config):
         Process.__init__(self)
         self.daemon = True
         self.q_in = q_in
         self.q_out = q_out
         self.func = func
-        self.func_args = func_init() if callable(func_init) else []
+        self.s3config = s3config
         self.start()
 
     def run(self):
+        s3 = S3(self.s3config)
         while True:
-            job = self.q_in.get()
-            if not job:
+            s3file = self.q_in.get()
+            if not s3file:
                 self.q_out.put(None)
                 break
-            for result in self.func(job, *self.func_args):
+            for result in self.func(s3, s3file):
                 self.q_out.put(result)
 
 
@@ -238,52 +240,63 @@ class S3Stream:
 
     """
 
-    def __init__(self, config=None, bucket=None, prefix=None, path=None, nb_workers=None, func=None, func_init=None):
+    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None):
         """Initialize the streamer
 
         Args:
-            config (dict, optional): config for S3
             bucket (str, optional): bucket to read from
             prefix (str, optional): prefix to read from
             path (str, optional): full path with bucket and prefix
+            s3config (dict, optional): config for S3
             nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
             func (lambda): function that will receive the s3 path to process
-            func_init (lambda): args to pass to func with the s3 file. good place to init S3 connection
+            func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
 
         Require:
             You need to pass either (bucket, prefix) or (path)
 
         Example:
 
-            def init_worker():
-                return S3(),
-
-            def decode(s3file, s3):
+            def decode(s3, s3file):
               with s3.get(path=s3file, decoder=simplejson.loads) as f:
                 for js in f:
                   yield js["..."]
 
-            for msg in S3Stream(path="s3://...", func=decode, func_init=init_worker):
+            for msg in S3Stream(path="s3://...", func=decode):
                 # do something with msg
 
+            # you can also give a list of s3 file to process
+            s3files = list("{}/{}".format(s.bucket_name, s.key) for s in S3().list(path="...") is "/k=28/" in s.key)
+            for msg in S3Stream(func=decode, func_iter=s3files):
+               # do something
+
         """
-        self.s3 = S3(config)
-        self.bucket = bucket
-        self.prefix = prefix
-        if path:
-            self.bucket, self.prefix = self.s3.split(path)
+        if not func_iter:
+            s3 = S3(s3config)
+            bucket = bucket
+            prefix = prefix
+            if path:
+                bucket, prefix = s3.split(path)
+
+            func_iter = list("s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix))
 
         self.q_in = SimpleQueue()
         self.q_out = SimpleQueue()
 
         self.nb_workers = nb_workers if nb_workers else cpu_count() * 4
-        self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, func_init) for _ in range(self.nb_workers))
+        self.func_iter = func_iter
+        self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, s3config) for _ in range(self.nb_workers))
+
+        def fill_q_in():
+            for v in self.func_iter:
+                self.q_in.put(v)
+            for _ in range(self.nb_workers):
+                self.q_in.put(None)
+
+        self.feeder = Thread(target=fill_q_in, daemon=True)
+        self.feeder.start()
 
     def __iter__(self):
-        for s3file in self.s3.list(self.bucket, self.prefix):
-            self.q_in.put("s3://{}/{}".format(s3file.bucket_name, s3file.key))
-        for _ in range(self.nb_workers):
-            self.q_in.put(None)
         return self
 
     def __next__(self):
@@ -291,6 +304,10 @@ class S3Stream:
         if not result:
             self.nb_workers -= 1
             if not self.nb_workers:
+                # ending subprocess
+                self.feeder.join()
+                for w in self.workers:
+                    w.join()
                 raise StopIteration
             return self.__next__()
         return result
