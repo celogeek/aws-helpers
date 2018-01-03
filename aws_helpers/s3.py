@@ -1,3 +1,4 @@
+"""S3 helper for boto3 on python3."""
 import gzip
 import io
 import re
@@ -12,25 +13,24 @@ S3_SPLIT = re.compile("^s3://([^/]+)/(.*)$")
 
 
 class S3:
-    """Helpers for aws s3 using boto3
+    """Helpers for aws s3 using boto3.
 
     This module is design to work nice with python3
 
     Attributes:
         config (botocore.config.Config): configuration for s3
         boto3_session (boto3.session.Session): session of boto3
+
     """
 
     def __init__(self, config=None):
-        """Initialize instance of S3 helper
+        """Initialize instance of S3 helper.
 
         Args:
             config(dict, optional): configuration pass to boto3 s3 resource
 
         Examples:
-
             s3 = S3({"proxies":{"http":"proxy:8888", "https":"proxy:8888"}})
-
             s3 = S3({"region_name":"us-east-1"})
 
         """
@@ -42,14 +42,13 @@ class S3:
         self.s3c = self.boto3_session.resource("s3", config=self.config)
 
     def split(self, path):
-        """Split path to bucket, key
+        """Split path to bucket, key.
 
         Args:
             path (str): s3 string to split into a bucket and prefix
 
         Returns:
             (bucket, prefix)
-
 
         Examples:
             bucket, key = s3.split("s3://my_bucket/my/key")
@@ -65,7 +64,7 @@ class S3:
         return S3_SPLIT.match(path).groups()
 
     def list(self, bucket=None, prefix=None, path=None):
-        """List object of a path recursively
+        """List object of a path recursively.
 
         Args:
             bucket (str, optional): bucket where to connect
@@ -79,9 +78,7 @@ class S3:
             s3.Bucket.objectsCollection(s3.Bucket, s3.ObjectSummary)
 
         Examples:
-
             mykeys = S3().list(bucket, prefix)
-
             mykeys = S3().list(path="s3://bucket/prefix")
 
         """
@@ -92,7 +89,7 @@ class S3:
 
     @contextmanager
     def get(self, bucket=None, key=None, path=None, compressed=None, decoder=None):
-        """Stream content from s3 file
+        """Stream content from s3 file.
 
         This method support uncompressing and decoding on the fly. It is a context method.
 
@@ -111,10 +108,9 @@ class S3:
         If a decoder is set, it will be use to decode the content on the fly
 
         Example:
-
             s = S3()
             bucket="my_bucket"
-            key="my/path/my_compressed_file.json.gz
+            key="my/path/my_compressed_file.json.gz"
             with s3.get(bucket, key, decoder=simplejson.dumps) as f:
                 for row in f:
                     print(f) #will print python object (dict)
@@ -122,7 +118,6 @@ class S3:
         Raise:
             KeyError: if bucket or key is missing, or path not defined to fill them
         """
-
         if path:
             bucket, key = self.split(path)
 
@@ -152,7 +147,7 @@ class S3:
 
     @contextmanager
     def put(self, bucket=None, key=None, path=None, compress=None, encoder=None):
-        """Stream content to s3 file
+        r"""Stream content to s3 file.
 
         This method support compressing and encoding on the fly. It is a context method.
 
@@ -166,16 +161,16 @@ class S3:
         Require:
             You need to pass either (bucket, prefix) or (path)
 
-        If compress is None, it will be set to True if the key ends with ".gz", False otherwise
+        Defaults:
+            If compress is None, it will be set to True if the key ends with ".gz", False otherwise
+            If a encoder is set, it will be use to encode the content on the fly. After each line and "\n" will be insert.
 
-        If a encoder is set, it will be use to encode the content on the fly. After each line and "\n" will be insert.
-
-        s = S3()
-        bucket="my_bucket"
-        key="my/path/my_compressed_file.json.gz
-        with s3.put(bucket, key, encoder=simplejson.dumps) as f:
-            f.write(myDict)
-
+        Example:
+            s = S3()
+            bucket="my_bucket"
+            key="my/path/my_compressed_file.json.gz"
+            with s3.put(bucket, key, encoder=simplejson.dumps) as f:
+                f.write(myDict)
 
         """
         if path:
@@ -207,15 +202,51 @@ class S3:
 
             self.s3c.Bucket(bucket).upload_fileobj(f, Key=key)
 
+    def touch(self, bucket=None, key=None, path=None):
+        """Create and empty file.
+
+        Args:
+            bucket (str, optional): bucket to read from
+            key (str, optional): key to read from
+            path (str, optional): full path of s3 file to read from
+
+        Require:
+            You need to pass either (bucket, prefix) or (path)
+
+        Example:
+            s = S3()
+            bucket="my_bucket"
+            key="my/path/_SUCCESS"
+            s3.touch(bucket, key)
+        """
+        if path:
+            bucket, key = self.split(path)
+
+        if not bucket:
+            raise KeyError("bucket")
+
+        if not key:
+            raise KeyError("key")
+
+        # todo
+
 
 class S3EndOfIteration:
-    pass
+    """Class to indicate the end of iteration."""
 
 
 class S3StreamWorker(Process):
-    """Worker for S3Streamer"""
+    """Worker for S3Streamer."""
 
     def __init__(self, q_in, q_out, func, s3config):
+        """Initialize the worker for s3.
+
+        Args:
+            q_in(SimpleQueue): queue that contain the file to process
+            q_out(SimpleQueue): queue for the result
+            func(lambda): function to call when a file is readed from the q_in
+            s3config: config s3 for the s3 connexion initialization
+        """
         Process.__init__(self)
         self.daemon = True
         self.q_in = q_in
@@ -225,6 +256,7 @@ class S3StreamWorker(Process):
         self.start()
 
     def run(self):
+        """Daemon run loop."""
         s3 = S3(self.s3config)
         while True:
             s3file = self.q_in.get()
@@ -236,7 +268,7 @@ class S3StreamWorker(Process):
 
 
 class S3Stream:
-    """S3 Streamer
+    """S3 Streamer.
 
     This will manager boto3 connexion in different sub process.
 
@@ -245,7 +277,7 @@ class S3Stream:
     """
 
     def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None):
-        """Initialize the streamer
+        """Initialize the streamer.
 
         Args:
             bucket (str, optional): bucket to read from
@@ -301,9 +333,11 @@ class S3Stream:
         self.feeder.start()
 
     def __iter__(self):
+        """Activate iterator function."""
         return self
 
     def __next__(self):
+        """Get a new element from the q_out."""
         result = self.q_out.get()
         if isinstance(result, S3EndOfIteration):
             self.nb_workers -= 1
