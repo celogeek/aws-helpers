@@ -228,7 +228,7 @@ class S3:
         if not key:
             raise KeyError("key")
 
-        # todo
+        self.s3c.Bucket(bucket).upload_fileobj(io.BytesIO(), Key=key)
 
 
 class S3EndOfIteration:
