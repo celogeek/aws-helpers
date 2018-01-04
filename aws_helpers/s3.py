@@ -1,13 +1,13 @@
 """S3 helper for boto3 on python3."""
-import gzip
-import io
-import re
+from botocore.config import Config as S3Config
 from contextlib import contextmanager
 from multiprocessing import Process, cpu_count, SimpleQueue
 from threading import Thread
-
+from time import sleep
 import boto3
-from botocore.config import Config as S3Config
+import gzip
+import io
+import re
 
 S3_SPLIT = re.compile("^s3://([^/]+)/(.*)$")
 
@@ -130,13 +130,18 @@ class S3:
         if compressed is None:
             compressed = key.endswith(".gz")
 
-        s3Response = self.s3c.ObjectSummary(bucket, key).get()
-        body = s3Response["Body"]
+        stream = None
+        while not stream:
+            try:
+                s3Response = self.s3c.ObjectSummary(bucket, key).get()
+                stream = io.BytesIO(s3Response["Body"].read())
+            except Exception as e:
+                print(e)
+                print("Retrying ...")
+                sleep(3)
 
         if compressed:
-            stream = gzip.open(body)
-        else:
-            stream = io.BytesIO(body.read())
+            stream = gzip.open(stream)
 
         if decoder:
             yield map(decoder, stream)
