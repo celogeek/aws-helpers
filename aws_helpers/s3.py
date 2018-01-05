@@ -285,7 +285,7 @@ class S3Stream:
 
     """
 
-    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=1):
+    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=None):
         """Initialize the streamer.
 
         Args:
@@ -296,7 +296,7 @@ class S3Stream:
             nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
             func (lambda): function that will receive the s3 path to process
             func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
-            bulk_size (int): will send bulk_size number of files to process to the worker
+            bulk_size (int, optional): will send bulk_size number of files to process to the worker
 
         Require:
             You need to pass either (bucket, prefix) or (path)
@@ -343,7 +343,7 @@ class S3Stream:
                 "s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix)
             ]
 
-            if bulk_size > 1:
+            if bulk_size:
                 bulk_iter = []
                 bulk_idx = -1
                 for i, s3file in enumerate(func_iter):
