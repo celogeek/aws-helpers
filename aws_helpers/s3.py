@@ -268,8 +268,12 @@ class S3StreamWorker(Process):
             if isinstance(s3file, S3EndOfIteration):
                 self.q_out.put(S3EndOfIteration())
                 break
-            for result in self.func(s3, s3file):
-                self.q_out.put(result)
+            try:
+                for result in self.func(s3, s3file):
+                    self.q_out.put(result)
+            except Exception as e:
+                self.q_out.put(e)
+                raise(e)
 
 
 class S3Stream:
@@ -324,7 +328,7 @@ class S3Stream:
         self.q_in = Queue()
         self.q_out = Queue()
 
-        self.nb_workers = nb_workers if nb_workers else cpu_count() * 4
+        self.nb_workers = nb_workers if nb_workers else cpu_count()
         self.func_iter = func_iter
         self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, s3config) for _ in range(self.nb_workers))
 
@@ -344,7 +348,9 @@ class S3Stream:
     def __next__(self):
         """Get a new element from the q_out."""
         result = self.q_out.get()
-        if isinstance(result, S3EndOfIteration):
+        if isinstance(result, Exception):
+            raise StopIteration
+        elif isinstance(result, S3EndOfIteration):
             self.nb_workers -= 1
             if not self.nb_workers:
                 # ending subprocess
