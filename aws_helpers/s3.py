@@ -264,12 +264,12 @@ class S3StreamWorker(Process):
         """Daemon run loop."""
         s3 = S3(self.s3config)
         while True:
-            s3file = self.q_in.get()
-            if isinstance(s3file, S3EndOfIteration):
+            s3files = self.q_in.get()
+            if isinstance(s3files, S3EndOfIteration):
                 self.q_out.put(S3EndOfIteration())
                 break
             try:
-                for result in self.func(s3, s3file):
+                for result in self.func(s3, s3files):
                     self.q_out.put(result)
             except Exception as e:
                 self.q_out.put(e)
@@ -285,7 +285,7 @@ class S3Stream:
 
     """
 
-    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None):
+    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=1):
         """Initialize the streamer.
 
         Args:
@@ -296,6 +296,7 @@ class S3Stream:
             nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
             func (lambda): function that will receive the s3 path to process
             func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
+            bulk_size (int): will send bulk_size number of files to process to the worker
 
         Require:
             You need to pass either (bucket, prefix) or (path)
@@ -315,7 +316,22 @@ class S3Stream:
             for msg in S3Stream(func=decode, func_iter=s3files):
                # do something
 
+            # for bulk processing file
+
+            def decode(s3, s3files):
+              results = {}
+              for s3file in s3files:
+                  with s3.get(path=s3file, decoder=simplejson.loads) as f:
+                    for js in f:
+                      results[...]=...
+              yield results
+
+            for results in S3Stream(path="s3://...", func=decode, bulk_size=32):
+                # do something with msg
+
+
         """
+        bulk_iter = None
         if not func_iter:
             s3 = S3(s3config)
             bucket = bucket
@@ -323,13 +339,24 @@ class S3Stream:
             if path:
                 bucket, prefix = s3.split(path)
 
-            func_iter = list("s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix))
+            func_iter = [
+                "s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix)
+            ]
+
+            if bulk_size > 1:
+                bulk_iter = []
+                bulk_idx = -1
+                for i, s3file in enumerate(func_iter):
+                    if i % bulk_size == 0:
+                        bulk_iter.append([])
+                        bulk_idx += 1
+                    bulk_iter[bulk_idx].append(s3file)
 
         self.q_in = Queue()
         self.q_out = Queue()
 
         self.nb_workers = nb_workers if nb_workers else cpu_count()
-        self.func_iter = func_iter
+        self.func_iter = bulk_iter if bulk_iter else func_iter
         self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, s3config) for _ in range(self.nb_workers))
 
         def fill_q_in():
