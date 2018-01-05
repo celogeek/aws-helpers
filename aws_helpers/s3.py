@@ -281,7 +281,7 @@ class S3Stream:
 
     """
 
-    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None):
+    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, queue_class=SimpleQueue):
         """Initialize the streamer.
 
         Args:
@@ -292,6 +292,7 @@ class S3Stream:
             nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
             func (lambda): function that will receive the s3 path to process
             func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
+            queue_class (object): class to use for the queue. Default is SimpleQueue
 
         Require:
             You need to pass either (bucket, prefix) or (path)
@@ -321,8 +322,8 @@ class S3Stream:
 
             func_iter = list("s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix))
 
-        self.q_in = SimpleQueue()
-        self.q_out = SimpleQueue()
+        self.q_in = queue_class()
+        self.q_out = queue_class()
 
         self.nb_workers = nb_workers if nb_workers else cpu_count() * 4
         self.func_iter = func_iter
