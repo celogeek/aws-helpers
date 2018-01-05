@@ -247,8 +247,8 @@ class S3StreamWorker(Process):
         """Initialize the worker for s3.
 
         Args:
-            q_in(SimpleQueue): queue that contain the file to process
-            q_out(SimpleQueue): queue for the result
+            q_in(Queue): queue that contain the file to process
+            q_out(Queue): queue for the result
             func(lambda): function to call when a file is readed from the q_in
             s3config: config s3 for the s3 connexion initialization
         """
@@ -258,7 +258,6 @@ class S3StreamWorker(Process):
         self.q_out = q_out
         self.func = func
         self.s3config = s3config
-        self.start()
 
     def run(self):
         """Daemon run loop."""
@@ -285,7 +284,7 @@ class S3Stream:
 
     """
 
-    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=None):
+    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=None, spread_last_bulk=True):
         """Initialize the streamer.
 
         Args:
@@ -297,6 +296,7 @@ class S3Stream:
             func (lambda): function that will receive the s3 path to process
             func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
             bulk_size (int, optional): will send bulk_size number of files to process to the worker
+            spread_last_bulk (boolean): will spread the last bulk if last bulk size < bulk_size into the other bulk
 
         Require:
             You need to pass either (bucket, prefix) or (path)
@@ -331,7 +331,6 @@ class S3Stream:
 
 
         """
-        bulk_iter = None
         if not func_iter:
             s3 = S3(s3config)
             bucket = bucket
@@ -343,22 +342,40 @@ class S3Stream:
                 "s3://{}/{}".format(s3file.bucket_name, s3file.key) for s3file in s3.list(bucket, prefix)
             ]
 
-            if bulk_size:
-                bulk_iter = []
-                bulk_idx = -1
-                for i, s3file in enumerate(func_iter):
-                    if i % bulk_size == 0:
-                        bulk_iter.append([])
-                        bulk_idx += 1
-                    bulk_iter[bulk_idx].append(s3file)
+        bulk_iter = None
+        if bulk_size:
+            bulk_iter = []
+            bulk_idx = -1
+            for i, s3file in enumerate(func_iter):
+                if i % bulk_size == 0:
+                    bulk_iter.append([])
+                    bulk_idx += 1
+                bulk_iter[bulk_idx].append(s3file)
+
+            # spread last bulk if last bulk < bulk size and bulk_iter > 1
+            if spread_last_bulk and len(bulk_iter) > 1 and len(bulk_iter[-1]) < bulk_size:
+                last_bulk = bulk_iter.pop()
+                for i, s3file in enumerate(last_bulk):
+                    bulk_iter[i % len(bulk_iter)].append(s3file)
+
+        self.s3config = s3config
+        self.func = func
+        self.nb_workers = nb_workers if nb_workers else cpu_count()
+        self.func_iter = bulk_iter if bulk_iter else func_iter
 
         self.q_in = Queue()
         self.q_out = Queue()
+        self.workers = []
 
-        self.nb_workers = nb_workers if nb_workers else cpu_count()
-        self.func_iter = bulk_iter if bulk_iter else func_iter
-        self.workers = list(S3StreamWorker(self.q_in, self.q_out, func, s3config) for _ in range(self.nb_workers))
+    def __iter__(self):
+        """Activate iterator function."""
+        # starting workers
+        for i in range(self.nb_workers):
+            w = S3StreamWorker(self.q_in, self.q_out, self.func, self.s3config)
+            w.start()
+            self.workers.append(w)
 
+        # starting feeder
         def fill_q_in():
             for v in self.func_iter:
                 self.q_in.put(v)
@@ -368,8 +385,6 @@ class S3Stream:
         self.feeder = Thread(target=fill_q_in, daemon=True)
         self.feeder.start()
 
-    def __iter__(self):
-        """Activate iterator function."""
         return self
 
     def __next__(self):
