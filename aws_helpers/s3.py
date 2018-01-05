@@ -1,7 +1,7 @@
 """S3 helper for boto3 on python3."""
 from botocore.config import Config as S3Config
 from contextlib import contextmanager
-from multiprocessing import Process, cpu_count, Queue
+from multiprocessing import Process, cpu_count, Manager
 from threading import Thread
 from time import sleep
 import boto3
@@ -363,8 +363,9 @@ class S3Stream:
         self.nb_workers = nb_workers if nb_workers else cpu_count()
         self.func_iter = bulk_iter if bulk_iter else func_iter
 
-        self.q_in = Queue()
-        self.q_out = Queue()
+        self.manager = Manager()
+        self.q_in = self.manager.Queue()
+        self.q_out = self.manager.Queue()
         self.workers = []
 
     def __iter__(self):
