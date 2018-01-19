@@ -243,13 +243,14 @@ class S3EndOfIteration:
 class S3StreamWorker(Process):
     """Worker for S3Streamer."""
 
-    def __init__(self, q_in, q_out, func, s3config):
+    def __init__(self, q_in, q_out, func, func_params, s3config):
         """Initialize the worker for s3.
 
         Args:
             q_in(Queue): queue that contain the file to process
             q_out(Queue): queue for the result
             func(lambda): function to call when a file is readed from the q_in
+            func_params(any, optional): additional params. if None, it will not be pass to the worker
             s3config: config s3 for the s3 connexion initialization
         """
         Process.__init__(self)
@@ -257,6 +258,7 @@ class S3StreamWorker(Process):
         self.q_in = q_in
         self.q_out = q_out
         self.func = func
+        self.func_params = func_params
         self.s3config = s3config
 
     def run(self):
@@ -268,8 +270,13 @@ class S3StreamWorker(Process):
                 self.q_out.put(S3EndOfIteration())
                 break
             try:
-                for result in self.func(s3, s3files):
+                args = [s3, s3files]
+                if self.func_params is not None:
+                    args.append(self.func_params)
+
+                for result in self.func(*args):
                     self.q_out.put(result)
+
             except Exception as e:
                 self.q_out.put(e)
                 raise(e)
@@ -284,7 +291,19 @@ class S3Stream:
 
     """
 
-    def __init__(self, bucket=None, prefix=None, path=None, s3config=None, nb_workers=None, func=None, func_iter=None, bulk_size=None, spread_last_bulk=True):
+    def __init__(
+        self,
+        bucket=None,
+        prefix=None,
+        path=None,
+        s3config=None,
+        nb_workers=None,
+        func=None,
+        func_iter=None,
+        func_params=None,
+        bulk_size=None,
+        spread_last_bulk=True
+    ):
         """Initialize the streamer.
 
         Args:
@@ -295,6 +314,7 @@ class S3Stream:
             nb_workers (int, optional): nb worker to use for processing. default cpu_count * 4
             func (lambda): function that will receive the s3 path to process
             func_iter (iterator, optional): iterator to pass to func, if missing, use bucket, prefix to fill it
+            func_params(any, optional): additional params. if None, it will not be pass to the worker
             bulk_size (int, optional): will send bulk_size number of files to process to the worker
             spread_last_bulk (boolean): will spread the last bulk if last bulk size < bulk_size into the other bulk
 
@@ -362,6 +382,7 @@ class S3Stream:
         self.func = func
         self.nb_workers = nb_workers if nb_workers else cpu_count()
         self.func_iter = bulk_iter if bulk_iter else func_iter
+        self.func_params = func_params
 
         self.manager = Manager()
         self.q_in = self.manager.Queue()
@@ -372,7 +393,7 @@ class S3Stream:
         """Activate iterator function."""
         # starting workers
         for i in range(self.nb_workers):
-            w = S3StreamWorker(self.q_in, self.q_out, self.func, self.s3config)
+            w = S3StreamWorker(self.q_in, self.q_out, self.func, self.func_params, self.s3config)
             w.start()
             self.workers.append(w)
 
