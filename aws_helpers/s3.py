@@ -87,6 +87,41 @@ class S3:
 
         return self.s3c.Bucket(bucket).objects.filter(Prefix=prefix)
 
+    def dir(self, bucket=None, prefix=None, path=None):
+        """Get the subdirectory of s3 path.
+
+        Args:
+            bucket (str, optional): bucket where to connect
+            prefix (str, optional): prefix to list
+            path (str, optional): full path where to connect and filter
+
+        Require:
+            You need to pass either (bucket, prefix) or (path)
+
+        Returns:
+            iterator(sub path of bucket / prefix)
+
+        Examples:
+            for d in S3().dir(bucket, prefix):
+                print(d)
+
+            # let say you have this :
+            # s3://test/my/path/dir1
+            # s3://test/my/path/dir2
+            # s3://test/my/path/dir3
+
+            list("test, "by/path/")
+            # ["dir1", "dir2", "dir3"]
+
+        """
+        if path:
+            bucket, prefix = self.split(path)
+
+        for result in self.s3c.meta.client.list_objects(
+            Bucket=bucket, Prefix=prefix, Delimiter="/"
+        ).get("CommonPrefixes"):
+            yield result["Prefix"][len(prefix):-1]
+
     @contextmanager
     def get(self, bucket=None, key=None, path=None, compressed=None, decoder=None):
         """Stream content from s3 file.
