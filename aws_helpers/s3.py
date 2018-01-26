@@ -63,19 +63,25 @@ class S3:
         """
         return S3_SPLIT.match(path).groups()
 
-    def list(self, bucket=None, prefix=None, path=None):
+    def list(self, bucket=None, prefix=None, path=None, format="object"):
         """List object of a path recursively.
 
         Args:
             bucket (str, optional): bucket where to connect
             prefix (str, optional): prefix to list
             path (str, optional): full path where to connect and filter
+            format (str, optional): can be "object", "tuple", "full". Default to "object"
 
         Require:
             You need to pass either (bucket, prefix) or (path)
 
         Returns:
-            s3.Bucket.objectsCollection(s3.Bucket, s3.ObjectSummary)
+            if format == "tuple":
+                iterator((bucket, key))
+            elif format == "full":
+                iterator("s3://{bucket}/{key}")
+            else:
+                s3.Bucket.objectsCollection(s3.Bucket, s3.ObjectSummary)
 
         Examples:
             mykeys = S3().list(bucket, prefix)
@@ -85,7 +91,17 @@ class S3:
         if path:
             bucket, prefix = self.split(path)
 
-        return self.s3c.Bucket(bucket).objects.filter(Prefix=prefix)
+        resp = self.s3c.Bucket(bucket).objects.filter(Prefix=prefix)
+
+        if format == "tuple":
+            for s3file in resp:
+                yield s3file.bucket_name, s3file.key
+        elif format == "full":
+            for s3file in resp:
+                yield "s3://{}/{}".format(s3file.bucket_name, s3file.key)
+        else:
+            for s3file in resp:
+                yield s3file
 
     def dir(self, bucket=None, prefix=None, path=None):
         """Get the subdirectory of s3 path.
