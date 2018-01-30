@@ -192,7 +192,7 @@ class S3:
                 sleep(3)
 
         if compressed:
-            stream = gzip.open(stream)
+            stream = io.BufferedReader(gzip.open(stream))
 
         if decoder:
             yield map(decoder, stream)
@@ -249,7 +249,7 @@ class S3:
 
         with io.BytesIO() as f:
             if compress:
-                with gzip.open(f, "wb") as fz:
+                with io.BufferedWriter(gzip.open(f, "wb")) as fz:
                     yield patchWriterIfNeed(fz)
             else:
                 yield patchWriterIfNeed(f)
