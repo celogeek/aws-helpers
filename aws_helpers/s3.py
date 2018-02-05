@@ -290,14 +290,25 @@ class S3:
 class S3EndOfIteration:
     """Class to indicate the end of iteration."""
 
+    def __init__(self, name=None):
+        """
+        Init the end of iteration.
+
+        Arguments
+            name: use by the worker to indicate which one has finish
+
+        """
+        self.name = name
+
 
 class S3StreamWorker(Process):
     """Worker for S3Streamer."""
 
-    def __init__(self, q_in, q_out, func, func_params, s3config):
+    def __init__(self, name, q_in, q_out, func, func_params, s3config):
         """Initialize the worker for s3.
 
         Args:
+            name: name of the worker to indicate the end of iteration
             q_in(Queue): queue that contain the file to process
             q_out(Queue): queue for the result
             func(lambda): function to call when a file is readed from the q_in
@@ -306,6 +317,7 @@ class S3StreamWorker(Process):
         """
         Process.__init__(self)
         self.daemon = True
+        self.name = name
         self.q_in = q_in
         self.q_out = q_out
         self.func = func
@@ -318,7 +330,7 @@ class S3StreamWorker(Process):
         while True:
             s3files = self.q_in.get()
             if isinstance(s3files, S3EndOfIteration):
-                self.q_out.put(S3EndOfIteration())
+                self.q_out.put(S3EndOfIteration(self.name))
                 break
             try:
                 args = [s3, s3files]
@@ -438,15 +450,16 @@ class S3Stream:
         self.manager = Manager()
         self.q_in = self.manager.Queue()
         self.q_out = self.manager.Queue()
-        self.workers = []
+        self.workers = {}
 
     def __iter__(self):
         """Activate iterator function."""
         # starting workers
         for i in range(self.nb_workers):
-            w = S3StreamWorker(self.q_in, self.q_out, self.func, self.func_params, self.s3config)
+            name = "worker_{}".format(i)
+            w = S3StreamWorker(name, self.q_in, self.q_out, self.func, self.func_params, self.s3config)
             w.start()
-            self.workers.append(w)
+            self.workers[name] = w
 
         # starting feeder
         def fill_q_in():
@@ -466,12 +479,16 @@ class S3Stream:
         if isinstance(result, Exception):
             raise StopIteration
         elif isinstance(result, S3EndOfIteration):
-            self.nb_workers -= 1
+            name = result.name
+            if name in self.workers:
+                self.workers[name].join()
+                del self.workers[name]
+                self.nb_workers -= 1
+
             if not self.nb_workers:
                 # ending subprocess
                 self.feeder.join()
-                for w in self.workers:
-                    w.join()
                 raise StopIteration
+
             return self.__next__()
         return result
