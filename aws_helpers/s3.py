@@ -135,7 +135,7 @@ class S3:
 
         for result in self.s3c.meta.client.list_objects(
             Bucket=bucket, Prefix=prefix, Delimiter="/"
-        ).get("CommonPrefixes"):
+        ).get("CommonPrefixes", []):
             yield result["Prefix"][len(prefix):-1]
 
     @contextmanager
